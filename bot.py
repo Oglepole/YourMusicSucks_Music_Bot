@@ -41,6 +41,13 @@ YDL_OPTIONS = {
 if YTDLP_COOKIEFILE:
     YDL_OPTIONS["cookiefile"] = YTDLP_COOKIEFILE
 
+SC_YDL_OPTIONS = {
+    "format": "bestaudio/best",
+    "noplaylist": True,
+    "quiet": True,
+    "default_search": "scsearch",
+}
+
 FFMPEG_OPTIONS = {
     "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
     "options": "-vn",
@@ -168,10 +175,10 @@ def spotify_queries_from_url(url: str) -> list[str]:
 async def extract_song(query: str) -> Song:
     loop = asyncio.get_running_loop()
 
-    def _extract() -> dict:
+    def _extract_with_options(local_query: str, options: dict) -> dict:
         try:
-            with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
-                info = ydl.extract_info(query, download=False)
+            with yt_dlp.YoutubeDL(options) as ydl:
+                info = ydl.extract_info(local_query, download=False)
                 if "entries" in info:
                     entries = [entry for entry in info["entries"] if entry]
                     if not entries:
@@ -185,6 +192,18 @@ async def extract_song(query: str) -> Song:
             if "sign in to confirm" in msg:
                 raise RuntimeError("YouTube blocked this request. Try another video.") from exc
             raise RuntimeError("Failed to fetch audio from YouTube.") from exc
+
+    def _extract() -> dict:
+        # First attempt: YouTube
+        try:
+            return _extract_with_options(query, YDL_OPTIONS)
+        except Exception as yt_exc:
+            # Fallback attempt: SoundCloud search for better resilience.
+            try:
+                sc_query = query if query.lower().startswith("http") else f"scsearch1:{query}"
+                return _extract_with_options(sc_query, SC_YDL_OPTIONS)
+            except Exception:
+                raise yt_exc
 
     info = await loop.run_in_executor(None, _extract)
     stream_url = info.get("url")
