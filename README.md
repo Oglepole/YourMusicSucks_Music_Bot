@@ -116,3 +116,20 @@ The script includes permissions for:
 - Use **Stop Bot** to stop it.
 - Use **Status** to check if it is running.
 
+## Deploy on Railway
+
+1. Push this repo to GitHub.
+2. Go to `https://railway.app` and create a new project.
+3. Choose **Deploy from GitHub repo** and select this repo.
+4. Railway will build using `Dockerfile` in this project.
+5. In Railway project variables, set:
+   - `DISCORD_TOKEN`
+   - `DISCORD_GUILD_ID`
+   - `SPOTIFY_CLIENT_ID`
+   - `SPOTIFY_CLIENT_SECRET`
+6. Deploy and keep one instance running.
+
+Notes:
+- Do not commit `.env` to GitHub.
+- Rotate leaked secrets before deploying.
+
