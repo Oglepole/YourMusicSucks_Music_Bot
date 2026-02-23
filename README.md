@@ -35,6 +35,7 @@ DISCORD_TOKEN=your_real_token_here
 DISCORD_GUILD_ID=your_server_id_here
 SPOTIFY_CLIENT_ID=your_spotify_client_id
 SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
+YTDLP_COOKIEFILE=/app/cookies.txt
 ```
 
 ## Spotify Setup
@@ -107,6 +108,7 @@ The script includes permissions for:
 - This is a basic starter bot. Add moderation/permission checks before production use.
 - Streaming from external platforms can break when providers change formats or policy.
 - Spotify links are resolved to YouTube searches for playback.
+- Some YouTube videos are blocked by anti-bot checks. If needed, provide a cookies file and set `YTDLP_COOKIEFILE`.
 
 
 ## Bot Control App

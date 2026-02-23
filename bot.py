@@ -22,6 +22,7 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 DISCORD_GUILD_ID = os.getenv("DISCORD_GUILD_ID")
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
 SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
+YTDLP_COOKIEFILE = os.getenv("YTDLP_COOKIEFILE")
 MAX_SPOTIFY_TRACKS = 25
 
 YDL_OPTIONS = {
@@ -29,7 +30,16 @@ YDL_OPTIONS = {
     "noplaylist": True,
     "quiet": True,
     "default_search": "ytsearch",
+    # Try multiple YouTube client profiles to reduce "sign in" blocks.
+    "extractor_args": {
+        "youtube": {
+            "player_client": ["android", "web", "tv_embedded"],
+        }
+    },
 }
+
+if YTDLP_COOKIEFILE:
+    YDL_OPTIONS["cookiefile"] = YTDLP_COOKIEFILE
 
 FFMPEG_OPTIONS = {
     "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
