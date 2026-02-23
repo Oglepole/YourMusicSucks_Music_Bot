@@ -33,10 +33,13 @@ Simple Discord music bot using `discord.py`, `yt-dlp`, Spotify API, and FFmpeg.
 ```env
 DISCORD_TOKEN=your_real_token_here
 DISCORD_GUILD_ID=your_server_id_here
+DISCORD_GUILD_IDS=server_id_1,server_id_2
 SPOTIFY_CLIENT_ID=your_spotify_client_id
 SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
 YTDLP_COOKIEFILE=/app/cookies.txt
 ```
+
+If `DISCORD_GUILD_IDS` is set, it takes priority over `DISCORD_GUILD_ID`.
 
 ## Spotify Setup
 
@@ -126,7 +129,8 @@ The script includes permissions for:
 4. Railway will build using `Dockerfile` in this project.
 5. In Railway project variables, set:
    - `DISCORD_TOKEN`
-   - `DISCORD_GUILD_ID`
+   - `DISCORD_GUILD_ID` (single-server instant sync)
+   - `DISCORD_GUILD_IDS` (multi-server instant sync, comma-separated)
    - `SPOTIFY_CLIENT_ID`
    - `SPOTIFY_CLIENT_SECRET`
 6. Deploy and keep one instance running.
@@ -134,4 +138,5 @@ The script includes permissions for:
 Notes:
 - Do not commit `.env` to GitHub.
 - Rotate leaked secrets before deploying.
+
 

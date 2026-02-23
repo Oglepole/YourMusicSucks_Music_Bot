@@ -20,6 +20,7 @@ load_dotenv()
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 DISCORD_GUILD_ID = os.getenv("DISCORD_GUILD_ID")
+DISCORD_GUILD_IDS = os.getenv("DISCORD_GUILD_IDS", "")
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
 SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 YTDLP_COOKIEFILE = os.getenv("YTDLP_COOKIEFILE")
@@ -87,6 +88,20 @@ intents.guilds = True
 intents.voice_states = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+
+def parse_guild_ids(raw: str) -> tuple[list[int], list[str]]:
+    parsed: list[int] = []
+    invalid: list[str] = []
+    for item in raw.split(","):
+        value = item.strip()
+        if not value:
+            continue
+        try:
+            parsed.append(int(value))
+        except ValueError:
+            invalid.append(value)
+    return parsed, invalid
 
 
 def get_spotify_client() -> spotipy.Spotify:
@@ -301,7 +316,26 @@ async def play_next(guild: discord.Guild) -> None:
 @bot.event
 async def on_ready() -> None:
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
-    if DISCORD_GUILD_ID:
+
+    if DISCORD_GUILD_IDS.strip():
+        guild_ids, invalid_ids = parse_guild_ids(DISCORD_GUILD_IDS)
+        if invalid_ids:
+            print(f"Ignoring invalid DISCORD_GUILD_IDS entries: {', '.join(invalid_ids)}")
+
+        total_synced = 0
+        for guild_id in guild_ids:
+            guild = discord.Object(id=guild_id)
+            bot.tree.copy_global_to(guild=guild)
+            synced = await bot.tree.sync(guild=guild)
+            total_synced += len(synced)
+            print(f"Synced {len(synced)} guild slash commands to {guild_id}.")
+
+        if not guild_ids:
+            synced = await bot.tree.sync()
+            print(f"No valid DISCORD_GUILD_IDS. Synced {len(synced)} global slash commands.")
+        else:
+            print(f"Guild sync complete across {len(guild_ids)} guild(s), total commands synced: {total_synced}.")
+    elif DISCORD_GUILD_ID:
         try:
             guild_id = int(DISCORD_GUILD_ID)
             guild = discord.Object(id=guild_id)
