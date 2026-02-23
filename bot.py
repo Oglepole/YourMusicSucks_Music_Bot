@@ -1,9 +1,12 @@
 import asyncio
+import json
 import os
 import re
 from collections import deque
 from dataclasses import dataclass
 from typing import Deque, Optional
+from urllib.parse import quote_plus
+from urllib.request import Request, urlopen
 
 import discord
 from discord import app_commands
@@ -209,13 +212,30 @@ async def extract_song(query: str) -> Song:
             raise RuntimeError("Failed to fetch audio from YouTube.") from exc
 
     def _extract() -> dict:
+        def _youtube_oembed_title(url: str) -> Optional[str]:
+            if "youtube.com" not in url and "youtu.be" not in url:
+                return None
+            try:
+                endpoint = "https://www.youtube.com/oembed?url=" + quote_plus(url) + "&format=json"
+                req = Request(endpoint, headers={"User-Agent": "Mozilla/5.0"})
+                with urlopen(req, timeout=8) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                title = payload.get("title")
+                return title.strip() if isinstance(title, str) and title.strip() else None
+            except Exception:
+                return None
+
         # First attempt: YouTube
         try:
             return _extract_with_options(query, YDL_OPTIONS)
         except Exception as yt_exc:
             # Fallback attempt: SoundCloud search for better resilience.
             try:
-                sc_query = query if query.lower().startswith("http") else f"scsearch1:{query}"
+                if query.lower().startswith("http"):
+                    title = _youtube_oembed_title(query)
+                    sc_query = f"scsearch1:{title}" if title else f"scsearch1:{query}"
+                else:
+                    sc_query = f"scsearch1:{query}"
                 return _extract_with_options(sc_query, SC_YDL_OPTIONS)
             except Exception:
                 raise yt_exc
