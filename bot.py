@@ -28,6 +28,7 @@ SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
 SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 YTDLP_COOKIEFILE = os.getenv("YTDLP_COOKIEFILE")
 MAX_SPOTIFY_TRACKS = 25
+IDLE_TIMEOUT_SECONDS = 60 * 60
 
 YDL_OPTIONS = {
     "format": "bestaudio/best",
@@ -72,6 +73,7 @@ class GuildPlayer:
         self.lock = asyncio.Lock()
         self.voice_lock = asyncio.Lock()
         self.now_playing: Optional[Song] = None
+        self.idle_task: Optional[asyncio.Task] = None
 
 
 players: dict[int, GuildPlayer] = {}
@@ -84,6 +86,30 @@ def get_player(guild_id: int) -> GuildPlayer:
         player = GuildPlayer()
         players[guild_id] = player
     return player
+
+
+def cancel_idle_disconnect(player: GuildPlayer) -> None:
+    if player.idle_task and not player.idle_task.done():
+        player.idle_task.cancel()
+    player.idle_task = None
+
+
+def schedule_idle_disconnect(guild: discord.Guild) -> None:
+    player = get_player(guild.id)
+    cancel_idle_disconnect(player)
+
+    async def _idle_disconnect() -> None:
+        try:
+            await asyncio.sleep(IDLE_TIMEOUT_SECONDS)
+            vc = guild.voice_client
+            if vc and vc.is_connected() and not vc.is_playing() and not vc.is_paused() and not player.queue:
+                await vc.disconnect()
+                player.now_playing = None
+                print(f"Idle timeout reached in guild {guild.id}; disconnected from voice.")
+        except asyncio.CancelledError:
+            pass
+
+    player.idle_task = asyncio.create_task(_idle_disconnect())
 
 
 intents = discord.Intents.default()
@@ -310,13 +336,16 @@ async def play_next(guild: discord.Guild) -> None:
     player = get_player(guild.id)
     async with player.lock:
         if voice_client.is_playing() or voice_client.is_paused():
+            cancel_idle_disconnect(player)
             return
         if not player.queue:
             player.now_playing = None
+            schedule_idle_disconnect(guild)
             return
 
         song = player.queue.popleft()
         player.now_playing = song
+        cancel_idle_disconnect(player)
         try:
             source = discord.FFmpegPCMAudio(song.stream_url, **FFMPEG_OPTIONS)
         except Exception as exc:
@@ -389,6 +418,7 @@ async def join(interaction: discord.Interaction) -> None:
         vc = await ensure_voice(interaction)
         if not vc.is_connected():
             raise RuntimeError("I could not connect to voice.")
+        schedule_idle_disconnect(interaction.guild)
         await interaction.followup.send("Joined your voice channel.", ephemeral=True)
     except Exception as exc:
         if interaction.response.is_done():
@@ -413,6 +443,7 @@ async def play(interaction: discord.Interaction, query: str) -> None:
             raise RuntimeError("Voice connection failed. I did not queue your song.")
 
         player = get_player(interaction.guild_id)
+        cancel_idle_disconnect(player)
         if "open.spotify.com/" in query.lower():
             spotify_queries = await asyncio.to_thread(spotify_queries_from_url, query)
             added = 0
@@ -500,6 +531,8 @@ async def stop(interaction: discord.Interaction) -> None:
     vc = interaction.guild.voice_client
     if vc and (vc.is_playing() or vc.is_paused()):
         vc.stop()
+    if vc and vc.is_connected():
+        schedule_idle_disconnect(interaction.guild)
     await interaction.response.send_message("Stopped playback and cleared the queue.")
 
 
@@ -530,6 +563,7 @@ async def leave(interaction: discord.Interaction) -> None:
     player = get_player(interaction.guild.id)
     player.queue.clear()
     player.now_playing = None
+    cancel_idle_disconnect(player)
     if vc:
         await vc.disconnect()
         await interaction.response.send_message("Disconnected and cleared queue.")
