@@ -391,18 +391,27 @@ async def play_next(guild: discord.Guild) -> None:
             song.title = refreshed.title
             player.now_playing = song
         except Exception as exc:
-            print(f"Track refresh failed in guild {guild.id}: {exc}")
-            player.now_playing = None
-            await play_next(guild)
-            return
+            # Do not skip immediately; try playing with the currently queued stream URL first.
+            print(f"Track refresh failed in guild {guild.id}, trying cached stream: {exc}")
 
+        source = None
         try:
             source = discord.FFmpegPCMAudio(song.stream_url, **FFMPEG_OPTIONS)
-        except Exception as exc:
-            print(f"FFmpeg source error in guild {guild.id}: {exc}")
-            player.now_playing = None
-            await play_next(guild)
-            return
+        except Exception as first_exc:
+            # Second attempt: refresh from source_query and retry once.
+            print(f"FFmpeg source error in guild {guild.id}, retrying once: {first_exc}")
+            try:
+                refreshed = await extract_song(song.source_query)
+                song.stream_url = refreshed.stream_url
+                song.webpage_url = refreshed.webpage_url
+                song.title = refreshed.title
+                player.now_playing = song
+                source = discord.FFmpegPCMAudio(song.stream_url, **FFMPEG_OPTIONS)
+            except Exception as second_exc:
+                print(f"FFmpeg retry failed in guild {guild.id}: {second_exc}")
+                player.now_playing = None
+                await play_next(guild)
+                return
 
         def _after_playback(error: Optional[Exception]) -> None:
             if error:
