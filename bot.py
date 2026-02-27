@@ -65,6 +65,7 @@ class Song:
     stream_url: str
     webpage_url: str
     requester_id: int
+    source_query: str
 
 
 class GuildPlayer:
@@ -309,6 +310,7 @@ async def extract_song(query: str) -> Song:
         stream_url=stream_url,
         webpage_url=info.get("webpage_url", query),
         requester_id=0,
+        source_query=query,
     )
 
 
@@ -379,6 +381,21 @@ async def play_next(guild: discord.Guild) -> None:
         song = player.queue.popleft()
         player.now_playing = song
         cancel_idle_disconnect(player)
+
+        # Refresh source right before playback because provider stream URLs can expire in queue.
+        try:
+            refresh_query = song.webpage_url if song.webpage_url.startswith("http") else song.source_query
+            refreshed = await extract_song(refresh_query)
+            song.stream_url = refreshed.stream_url
+            song.webpage_url = refreshed.webpage_url
+            song.title = refreshed.title
+            player.now_playing = song
+        except Exception as exc:
+            print(f"Track refresh failed in guild {guild.id}: {exc}")
+            player.now_playing = None
+            await play_next(guild)
+            return
+
         try:
             source = discord.FFmpegPCMAudio(song.stream_url, **FFMPEG_OPTIONS)
         except Exception as exc:
