@@ -5,7 +5,7 @@ import re
 from collections import deque
 from dataclasses import dataclass
 from typing import Deque, Optional
-from urllib.parse import quote_plus
+from urllib.parse import parse_qs, quote_plus, urlsplit
 from urllib.request import Request, urlopen
 
 import discord
@@ -218,6 +218,22 @@ def spotify_queries_from_url(url: str) -> list[str]:
 
 async def extract_song(query: str) -> Song:
     loop = asyncio.get_running_loop()
+    normalized_query = query
+
+    if query.lower().startswith("http"):
+        try:
+            parts = urlsplit(query)
+            host = parts.netloc.lower()
+            if "youtu.be" in host:
+                video_id = parts.path.lstrip("/").split("/")[0]
+                if video_id:
+                    normalized_query = f"https://www.youtube.com/watch?v={video_id}"
+            elif "youtube.com" in host:
+                v = parse_qs(parts.query).get("v", [None])[0]
+                if v:
+                    normalized_query = f"https://www.youtube.com/watch?v={v}"
+        except Exception:
+            normalized_query = query
 
     def _extract_with_options(local_query: str, options: dict) -> dict:
         try:
@@ -261,15 +277,15 @@ async def extract_song(query: str) -> Song:
 
         # First attempt: YouTube
         try:
-            return _extract_with_options(query, YDL_OPTIONS)
+            return _extract_with_options(normalized_query, YDL_OPTIONS)
         except Exception as yt_exc:
             # Fallback path for blocked YouTube URLs/queries:
             # 1) Resolve title and retry via ytsearch (non-direct URL)
             # 2) Retry via SoundCloud search
             try:
-                fallback_query = query
-                if query.lower().startswith("http"):
-                    title = _youtube_oembed_title(query)
+                fallback_query = normalized_query
+                if normalized_query.lower().startswith("http"):
+                    title = _youtube_oembed_title(normalized_query)
                     if title:
                         fallback_query = title
 
