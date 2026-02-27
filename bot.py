@@ -237,6 +237,14 @@ async def extract_song(query: str) -> Song:
                 raise RuntimeError("YouTube blocked this request. Try another video.") from exc
             raise RuntimeError("Failed to fetch audio from YouTube.") from exc
 
+    def _looks_like_youtube_block_error(exc: Exception) -> bool:
+        msg = str(exc).lower()
+        return (
+            "youtube blocked this request" in msg
+            or "sign in to confirm" in msg
+            or "failed to fetch audio from youtube" in msg
+        )
+
     def _extract() -> dict:
         def _youtube_oembed_title(url: str) -> Optional[str]:
             if "youtube.com" not in url and "youtu.be" not in url:
@@ -255,14 +263,23 @@ async def extract_song(query: str) -> Song:
         try:
             return _extract_with_options(query, YDL_OPTIONS)
         except Exception as yt_exc:
-            # Fallback attempt: SoundCloud search for better resilience.
+            # Fallback path for blocked YouTube URLs/queries:
+            # 1) Resolve title and retry via ytsearch (non-direct URL)
+            # 2) Retry via SoundCloud search
             try:
+                fallback_query = query
                 if query.lower().startswith("http"):
                     title = _youtube_oembed_title(query)
-                    sc_query = f"scsearch1:{title}" if title else f"scsearch1:{query}"
-                else:
-                    sc_query = f"scsearch1:{query}"
-                return _extract_with_options(sc_query, SC_YDL_OPTIONS)
+                    if title:
+                        fallback_query = title
+
+                if _looks_like_youtube_block_error(yt_exc):
+                    try:
+                        return _extract_with_options(f"ytsearch1:{fallback_query}", YDL_OPTIONS)
+                    except Exception:
+                        pass
+
+                return _extract_with_options(f"scsearch1:{fallback_query}", SC_YDL_OPTIONS)
             except Exception:
                 raise yt_exc
 
