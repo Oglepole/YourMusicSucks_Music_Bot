@@ -294,7 +294,7 @@ async def extract_song(query: str) -> Song:
         except Exception as yt_exc:
             # Fallback path for blocked YouTube URLs/queries:
             # 1) Resolve title and retry via ytsearch (non-direct URL)
-            # 2) Retry via SoundCloud search
+            # 2) Do NOT fallback to SoundCloud for YouTube URLs (avoid wrong song)
             try:
                 fallback_query = normalized_query
                 if normalized_query.lower().startswith("http"):
@@ -308,7 +308,11 @@ async def extract_song(query: str) -> Song:
                     except Exception:
                         pass
 
-                return _extract_with_options(f"scsearch1:{fallback_query}", SC_YDL_OPTIONS)
+                # Only allow SoundCloud fallback for non-URL queries.
+                if not normalized_query.lower().startswith("http"):
+                    return _extract_with_options(f"scsearch1:{fallback_query}", SC_YDL_OPTIONS)
+
+                raise yt_exc
             except Exception:
                 raise yt_exc
 
