@@ -37,6 +37,7 @@ DISCORD_GUILD_IDS=server_id_1,server_id_2
 SPOTIFY_CLIENT_ID=your_spotify_client_id
 SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
 YTDLP_COOKIEFILE=/app/cookies.txt
+YTDLP_COOKIE_B64=base64_of_cookies_txt
 ```
 
 If `DISCORD_GUILD_IDS` is set, it takes priority over `DISCORD_GUILD_ID`.
@@ -112,6 +113,7 @@ The script includes permissions for:
 - Streaming from external platforms can break when providers change formats or policy.
 - Spotify links are resolved to YouTube searches for playback.
 - Some YouTube videos are blocked by anti-bot checks. If needed, provide a cookies file and set `YTDLP_COOKIEFILE`.
+- If you can’t mount a file on your host (Railway), set `YTDLP_COOKIE_B64` with a base64-encoded `cookies.txt` file. This takes precedence.
 
 
 ## Bot Control App

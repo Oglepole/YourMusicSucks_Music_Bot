@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import os
 import re
@@ -27,6 +28,7 @@ DISCORD_GUILD_IDS = os.getenv("DISCORD_GUILD_IDS", "")
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
 SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 YTDLP_COOKIEFILE = os.getenv("YTDLP_COOKIEFILE")
+YTDLP_COOKIE_B64 = os.getenv("YTDLP_COOKIE_B64")
 MAX_SPOTIFY_TRACKS = 25
 IDLE_TIMEOUT_SECONDS = 60 * 60
 
@@ -42,6 +44,16 @@ YDL_OPTIONS = {
         }
     },
 }
+
+if YTDLP_COOKIE_B64:
+    try:
+        cookie_bytes = base64.b64decode(YTDLP_COOKIE_B64)
+        temp_path = "/tmp/yt_cookies.txt"
+        with open(temp_path, "wb") as f:
+            f.write(cookie_bytes)
+        YTDLP_COOKIEFILE = temp_path
+    except Exception as exc:
+        print(f"Failed to decode YTDLP_COOKIE_B64: {exc}")
 
 if YTDLP_COOKIEFILE:
     YDL_OPTIONS["cookiefile"] = YTDLP_COOKIEFILE
