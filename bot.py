@@ -29,6 +29,7 @@ SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
 SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 YTDLP_COOKIEFILE = os.getenv("YTDLP_COOKIEFILE")
 YTDLP_COOKIE_B64 = os.getenv("YTDLP_COOKIE_B64")
+ALLOW_SOUNDCLOUD_FALLBACK = os.getenv("ALLOW_SOUNDCLOUD_FALLBACK", "false").lower() in ("1", "true", "yes")
 MAX_SPOTIFY_TRACKS = 25
 IDLE_TIMEOUT_SECONDS = 10 * 60
 
@@ -308,8 +309,8 @@ async def extract_song(query: str) -> Song:
                     except Exception:
                         pass
 
-                # Only allow SoundCloud fallback for non-URL queries.
-                if not normalized_query.lower().startswith("http"):
+                # Optional: only allow SoundCloud fallback for non-URL queries when explicitly enabled.
+                if ALLOW_SOUNDCLOUD_FALLBACK and not normalized_query.lower().startswith("http"):
                     return _extract_with_options(f"scsearch1:{fallback_query}", SC_YDL_OPTIONS)
 
                 raise yt_exc
