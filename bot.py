@@ -38,10 +38,10 @@ YDL_OPTIONS = {
     "noplaylist": True,
     "quiet": True,
     "default_search": "ytsearch",
-    # Try multiple YouTube client profiles to reduce "sign in" blocks.
+    # Use web client only; android/tv clients often require PO tokens and cause 403 streams.
     "extractor_args": {
         "youtube": {
-            "player_client": ["android", "web", "tv_embedded"],
+            "player_client": ["web"],
         }
     },
 }
