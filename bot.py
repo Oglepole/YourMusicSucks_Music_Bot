@@ -46,6 +46,19 @@ YDL_OPTIONS = {
     },
 }
 
+YDL_ANDROID_OPTIONS = {
+    "format": "bestaudio/best",
+    "noplaylist": True,
+    "quiet": True,
+    "default_search": "ytsearch",
+    # Fallback client path when web extraction yields no playable formats.
+    "extractor_args": {
+        "youtube": {
+            "player_client": ["android"],
+        }
+    },
+}
+
 if YTDLP_COOKIE_B64:
     try:
         cookie_bytes = base64.b64decode(YTDLP_COOKIE_B64)
@@ -59,6 +72,7 @@ if YTDLP_COOKIE_B64:
 
 if YTDLP_COOKIEFILE:
     YDL_OPTIONS["cookiefile"] = YTDLP_COOKIEFILE
+    YDL_ANDROID_OPTIONS["cookiefile"] = YTDLP_COOKIEFILE
     try:
         size = os.path.getsize(YTDLP_COOKIEFILE)
         print(f"Using yt-dlp cookiefile: {YTDLP_COOKIEFILE} ({size} bytes)")
@@ -279,6 +293,9 @@ async def extract_song(query: str) -> Song:
             "youtube blocked this request" in msg
             or "sign in to confirm" in msg
             or "failed to fetch audio from youtube" in msg
+            or "requested format is not available" in msg
+            or "only images are available for download" in msg
+            or "n challenge solving failed" in msg
         )
 
     def _extract() -> dict:
@@ -299,6 +316,13 @@ async def extract_song(query: str) -> Song:
         try:
             return _extract_with_options(normalized_query, YDL_OPTIONS)
         except Exception as yt_exc:
+            # Retry with android client when web client extraction is blocked.
+            if _looks_like_youtube_block_error(yt_exc):
+                try:
+                    return _extract_with_options(normalized_query, YDL_ANDROID_OPTIONS)
+                except Exception:
+                    pass
+
             # Fallback path for blocked YouTube URLs/queries:
             # 1) Resolve title and retry via ytsearch (non-direct URL)
             # 2) Do NOT fallback to SoundCloud for YouTube URLs (avoid wrong song)
@@ -311,9 +335,9 @@ async def extract_song(query: str) -> Song:
 
                 if _looks_like_youtube_block_error(yt_exc):
                     try:
-                        return _extract_with_options(f"ytsearch1:{fallback_query}", YDL_OPTIONS)
+                        return _extract_with_options(f"ytsearch1:{fallback_query}", YDL_ANDROID_OPTIONS)
                     except Exception:
-                        pass
+                        return _extract_with_options(f"ytsearch1:{fallback_query}", YDL_OPTIONS)
 
                 # Optional: only allow SoundCloud fallback for non-URL queries when explicitly enabled.
                 if ALLOW_SOUNDCLOUD_FALLBACK and not normalized_query.lower().startswith("http"):
@@ -447,8 +471,10 @@ async def play_next(guild: discord.Guild) -> None:
 @bot.event
 async def on_ready() -> None:
     print(f"yt-dlp version: {yt_dlp.version.__version__}")
-    clients = YDL_OPTIONS.get("extractor_args", {}).get("youtube", {}).get("player_client")
-    print(f"YouTube player_client config: {clients}")
+    web_clients = YDL_OPTIONS.get("extractor_args", {}).get("youtube", {}).get("player_client")
+    android_clients = YDL_ANDROID_OPTIONS.get("extractor_args", {}).get("youtube", {}).get("player_client")
+    print(f"YouTube web player_client config: {web_clients}")
+    print(f"YouTube android fallback config: {android_clients}")
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
 
     if DISCORD_GUILD_IDS.strip():
