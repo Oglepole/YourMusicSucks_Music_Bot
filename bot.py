@@ -53,11 +53,17 @@ if YTDLP_COOKIE_B64:
         with open(temp_path, "wb") as f:
             f.write(cookie_bytes)
         YTDLP_COOKIEFILE = temp_path
+        print(f"Loaded YTDLP_COOKIE_B64 into {temp_path} ({len(cookie_bytes)} bytes)")
     except Exception as exc:
         print(f"Failed to decode YTDLP_COOKIE_B64: {exc}")
 
 if YTDLP_COOKIEFILE:
     YDL_OPTIONS["cookiefile"] = YTDLP_COOKIEFILE
+    try:
+        size = os.path.getsize(YTDLP_COOKIEFILE)
+        print(f"Using yt-dlp cookiefile: {YTDLP_COOKIEFILE} ({size} bytes)")
+    except Exception as exc:
+        print(f"Cookiefile set but unreadable: {YTDLP_COOKIEFILE} ({exc})")
 
 SC_YDL_OPTIONS = {
     "format": "bestaudio/best",
@@ -440,6 +446,9 @@ async def play_next(guild: discord.Guild) -> None:
 
 @bot.event
 async def on_ready() -> None:
+    print(f"yt-dlp version: {yt_dlp.version.__version__}")
+    clients = YDL_OPTIONS.get("extractor_args", {}).get("youtube", {}).get("player_client")
+    print(f"YouTube player_client config: {clients}")
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
 
     if DISCORD_GUILD_IDS.strip():
