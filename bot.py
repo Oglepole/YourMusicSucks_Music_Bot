@@ -72,7 +72,6 @@ if YTDLP_COOKIE_B64:
 
 if YTDLP_COOKIEFILE:
     YDL_OPTIONS["cookiefile"] = YTDLP_COOKIEFILE
-    YDL_ANDROID_OPTIONS["cookiefile"] = YTDLP_COOKIEFILE
     try:
         size = os.path.getsize(YTDLP_COOKIEFILE)
         print(f"Using yt-dlp cookiefile: {YTDLP_COOKIEFILE} ({size} bytes)")
@@ -477,6 +476,8 @@ async def on_ready() -> None:
     android_clients = YDL_ANDROID_OPTIONS.get("extractor_args", {}).get("youtube", {}).get("player_client")
     print(f"YouTube web player_client config: {web_clients}")
     print(f"YouTube android fallback config: {android_clients}")
+    print(f"YouTube web cookiefile enabled: {'cookiefile' in YDL_OPTIONS}")
+    print(f"YouTube android cookiefile enabled: {'cookiefile' in YDL_ANDROID_OPTIONS}")
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
 
     if DISCORD_GUILD_IDS.strip():
