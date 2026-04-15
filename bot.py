@@ -38,6 +38,9 @@ YDL_OPTIONS = {
     "noplaylist": True,
     "quiet": True,
     "default_search": "ytsearch",
+    # Enable JS challenge solving in cloud environments.
+    "js_runtimes": {"node": {}},
+    "remote_components": ["ejs:github"],
     # Use web client only; android/tv clients often require PO tokens and cause 403 streams.
     "extractor_args": {
         "youtube": {
@@ -51,6 +54,8 @@ YDL_ANDROID_OPTIONS = {
     "noplaylist": True,
     "quiet": True,
     "default_search": "ytsearch",
+    "js_runtimes": {"node": {}},
+    "remote_components": ["ejs:github"],
     # Fallback client path when web extraction yields no playable formats.
     "extractor_args": {
         "youtube": {
@@ -476,6 +481,8 @@ async def on_ready() -> None:
     android_clients = YDL_ANDROID_OPTIONS.get("extractor_args", {}).get("youtube", {}).get("player_client")
     print(f"YouTube web player_client config: {web_clients}")
     print(f"YouTube android fallback config: {android_clients}")
+    print(f"YouTube remote_components: {YDL_OPTIONS.get('remote_components')}")
+    print(f"YouTube js_runtimes: {list((YDL_OPTIONS.get('js_runtimes') or {}).keys())}")
     print(f"YouTube web cookiefile enabled: {'cookiefile' in YDL_OPTIONS}")
     print(f"YouTube android cookiefile enabled: {'cookiefile' in YDL_ANDROID_OPTIONS}")
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
