@@ -283,8 +283,10 @@ async def extract_song(query: str) -> Song:
             msg = str(exc).lower()
             if "drm" in msg:
                 raise RuntimeError("This video is DRM-protected and cannot be played.") from exc
-            if "sign in to confirm" in msg:
-                raise RuntimeError("YouTube blocked this request. Try another video.") from exc
+            if "cookies are no longer valid" in msg or "please sign in" in msg or "sign in to confirm" in msg:
+                if YTDLP_COOKIEFILE or YTDLP_COOKIE_B64:
+                    raise RuntimeError("YouTube cookies expired. Re-export cookies.txt and update YTDLP_COOKIE_B64.") from exc
+                raise RuntimeError("YouTube blocked this request. Add valid YouTube cookies.") from exc
             raise RuntimeError("Failed to fetch audio from YouTube.") from exc
 
     def _looks_like_youtube_block_error(exc: Exception) -> bool:
