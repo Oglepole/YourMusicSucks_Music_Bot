@@ -3,6 +3,7 @@ import base64
 import json
 import os
 import re
+import tempfile
 from collections import deque
 from dataclasses import dataclass
 from typing import Deque, Optional
@@ -20,7 +21,12 @@ import yt_dlp
 from yt_dlp.utils import DownloadError
 
 
-load_dotenv()
+BOT_ENV_FILE = os.getenv("BOT_ENV_FILE")
+if BOT_ENV_FILE:
+    load_dotenv(dotenv_path=BOT_ENV_FILE)
+    print(f"Loaded env file from BOT_ENV_FILE: {BOT_ENV_FILE}")
+else:
+    load_dotenv()
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 DISCORD_GUILD_ID = os.getenv("DISCORD_GUILD_ID")
@@ -31,7 +37,7 @@ YTDLP_COOKIEFILE = os.getenv("YTDLP_COOKIEFILE")
 YTDLP_COOKIE_B64 = os.getenv("YTDLP_COOKIE_B64")
 ALLOW_SOUNDCLOUD_FALLBACK = os.getenv("ALLOW_SOUNDCLOUD_FALLBACK", "false").lower() in ("1", "true", "yes")
 MAX_SPOTIFY_TRACKS = 25
-IDLE_TIMEOUT_SECONDS = 10 * 60
+IDLE_TIMEOUT_SECONDS = 30 * 60
 
 YDL_OPTIONS = {
     "format": "bestaudio/best",
@@ -64,10 +70,24 @@ YDL_ANDROID_OPTIONS = {
     },
 }
 
+if not YTDLP_COOKIE_B64:
+    # Railway variable values are capped at 32768 chars.
+    # Support split cookies across multiple env vars:
+    # YTDLP_COOKIE_B64_PART1, YTDLP_COOKIE_B64_PART2, ...
+    cookie_parts = []
+    for idx in range(1, 10):
+        part = os.getenv(f"YTDLP_COOKIE_B64_PART{idx}")
+        if not part:
+            break
+        cookie_parts.append(part)
+    if cookie_parts:
+        YTDLP_COOKIE_B64 = "".join(cookie_parts)
+        print(f"Loaded YTDLP cookie from {len(cookie_parts)} split env part(s).")
+
 if YTDLP_COOKIE_B64:
     try:
         cookie_bytes = base64.b64decode(YTDLP_COOKIE_B64)
-        temp_path = "/tmp/yt_cookies.txt"
+        temp_path = os.path.join(tempfile.gettempdir(), "yt_cookies.txt")
         with open(temp_path, "wb") as f:
             f.write(cookie_bytes)
         YTDLP_COOKIEFILE = temp_path
@@ -90,10 +110,8 @@ SC_YDL_OPTIONS = {
     "default_search": "scsearch",
 }
 
-FFMPEG_OPTIONS = {
-    "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
-    "options": "-vn",
-}
+FFMPEG_BASE_BEFORE_OPTIONS = "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
+FFMPEG_OPTIONS = {"options": "-vn"}
 
 
 @dataclass
@@ -103,6 +121,7 @@ class Song:
     webpage_url: str
     requester_id: int
     source_query: str
+    http_headers: dict[str, str]
 
 
 class GuildPlayer:
@@ -124,6 +143,25 @@ def get_player(guild_id: int) -> GuildPlayer:
         player = GuildPlayer()
         players[guild_id] = player
     return player
+
+
+def build_ffmpeg_before_options(http_headers: Optional[dict]) -> str:
+    before_options = FFMPEG_BASE_BEFORE_OPTIONS
+    if not isinstance(http_headers, dict) or not http_headers:
+        return before_options
+
+    forward_keys = ("User-Agent", "Referer", "Origin", "Cookie")
+    header_lines = []
+    for key in forward_keys:
+        value = http_headers.get(key)
+        if value:
+            safe_value = str(value).replace('"', "")
+            header_lines.append(f"{key}: {safe_value}\r\n")
+
+    if header_lines:
+        joined = "".join(header_lines)
+        before_options += f' -headers "{joined}"'
+    return before_options
 
 
 def cancel_idle_disconnect(player: GuildPlayer) -> None:
@@ -262,6 +300,8 @@ async def extract_song(query: str) -> Song:
         try:
             parts = urlsplit(query)
             host = parts.netloc.lower()
+            if "discord.com" in host or "discord.gg" in host:
+                raise RuntimeError("That is a Discord link, not a song. Use a YouTube/Spotify URL or search text.")
             if "youtu.be" in host:
                 video_id = parts.path.lstrip("/").split("/")[0]
                 if video_id:
@@ -270,6 +310,10 @@ async def extract_song(query: str) -> Song:
                 v = parse_qs(parts.query).get("v", [None])[0]
                 if v:
                     normalized_query = f"https://www.youtube.com/watch?v={v}"
+            elif "open.spotify.com" not in host and "soundcloud.com" not in host:
+                raise RuntimeError("Unsupported URL. Use YouTube/Spotify/SoundCloud links or plain search text.")
+        except RuntimeError:
+            raise
         except Exception:
             normalized_query = query
 
@@ -318,13 +362,21 @@ async def extract_song(query: str) -> Song:
             except Exception:
                 return None
 
-        # First attempt: YouTube
+        is_youtube_url = normalized_query.lower().startswith("http") and (
+            "youtube.com" in normalized_query.lower() or "youtu.be" in normalized_query.lower()
+        )
+
+        # First attempt: prefer android for direct YouTube URLs to avoid WEB stream 403s in ffmpeg.
         try:
+            if is_youtube_url:
+                return _extract_with_options(normalized_query, YDL_ANDROID_OPTIONS)
             return _extract_with_options(normalized_query, YDL_OPTIONS)
         except Exception as yt_exc:
-            # Retry with android client when web client extraction is blocked.
+            # Retry with alternate client when initial extraction is blocked.
             if _looks_like_youtube_block_error(yt_exc):
                 try:
+                    if is_youtube_url:
+                        return _extract_with_options(normalized_query, YDL_OPTIONS)
                     return _extract_with_options(normalized_query, YDL_ANDROID_OPTIONS)
                 except Exception:
                     pass
@@ -357,6 +409,9 @@ async def extract_song(query: str) -> Song:
     stream_url = info.get("url")
     if not stream_url:
         raise ValueError("Could not get audio stream URL.")
+    http_headers = info.get("http_headers")
+    if not isinstance(http_headers, dict):
+        http_headers = {}
 
     return Song(
         title=info.get("title", "Unknown title"),
@@ -364,19 +419,57 @@ async def extract_song(query: str) -> Song:
         webpage_url=info.get("webpage_url", query),
         requester_id=0,
         source_query=query,
+        http_headers=http_headers,
     )
 
 
-async def ensure_voice(interaction: discord.Interaction) -> discord.VoiceClient:
+async def ensure_voice(
+    interaction: discord.Interaction, preferred_channel: Optional[discord.abc.Connectable] = None
+) -> discord.VoiceClient:
     if interaction.guild is None:
         raise RuntimeError("This command can only be used in a server.")
     if not interaction.user or not isinstance(interaction.user, discord.Member):
         raise RuntimeError("Could not resolve your member information.")
-    if not interaction.user.voice or not interaction.user.voice.channel:
-        raise RuntimeError("Join a voice channel first.")
 
     guild = interaction.guild
-    voice_channel = interaction.user.voice.channel
+
+    def _resolve_voice_channel() -> Optional[discord.abc.Connectable]:
+        # Explicit override from command arg.
+        if preferred_channel is not None:
+            return preferred_channel
+
+        # Primary source: interaction member voice state
+        if interaction.user.voice and interaction.user.voice.channel:
+            return interaction.user.voice.channel
+
+        # Fallback: guild voice-state cache by user id (version-safe)
+        cache = getattr(guild, "voice_states", None)
+        if isinstance(cache, dict):
+            state = cache.get(interaction.user.id)
+            if state and state.channel:
+                return state.channel
+
+        internal_cache = getattr(guild, "_voice_states", None)
+        if isinstance(internal_cache, dict):
+            state = internal_cache.get(interaction.user.id)
+            if state and state.channel:
+                return state.channel
+
+        return None
+
+    voice_channel = _resolve_voice_channel()
+    if voice_channel is None:
+        # Last attempt: fetch fresh member state from API/cache refresh path.
+        try:
+            fresh_member = guild.get_member(interaction.user.id) or await guild.fetch_member(interaction.user.id)
+            if fresh_member.voice and fresh_member.voice.channel:
+                voice_channel = fresh_member.voice.channel
+        except Exception:
+            voice_channel = None
+
+    if voice_channel is None:
+        raise RuntimeError("Join a voice channel first, or use /join channel:<voice-channel>.")
+
     player = get_player(guild.id)
 
     async def _connect_with_retry() -> discord.VoiceClient:
@@ -442,6 +535,7 @@ async def play_next(guild: discord.Guild) -> None:
             song.stream_url = refreshed.stream_url
             song.webpage_url = refreshed.webpage_url
             song.title = refreshed.title
+            song.http_headers = refreshed.http_headers
             player.now_playing = song
         except Exception as exc:
             # Do not skip immediately; try playing with the currently queued stream URL first.
@@ -449,7 +543,11 @@ async def play_next(guild: discord.Guild) -> None:
 
         source = None
         try:
-            source = discord.FFmpegPCMAudio(song.stream_url, **FFMPEG_OPTIONS)
+            source = discord.FFmpegPCMAudio(
+                song.stream_url,
+                before_options=build_ffmpeg_before_options(song.http_headers),
+                **FFMPEG_OPTIONS,
+            )
         except Exception as first_exc:
             # Second attempt: refresh from source_query and retry once.
             print(f"FFmpeg source error in guild {guild.id}, retrying once: {first_exc}")
@@ -458,8 +556,13 @@ async def play_next(guild: discord.Guild) -> None:
                 song.stream_url = refreshed.stream_url
                 song.webpage_url = refreshed.webpage_url
                 song.title = refreshed.title
+                song.http_headers = refreshed.http_headers
                 player.now_playing = song
-                source = discord.FFmpegPCMAudio(song.stream_url, **FFMPEG_OPTIONS)
+                source = discord.FFmpegPCMAudio(
+                    song.stream_url,
+                    before_options=build_ffmpeg_before_options(song.http_headers),
+                    **FFMPEG_OPTIONS,
+                )
             except Exception as second_exc:
                 print(f"FFmpeg retry failed in guild {guild.id}: {second_exc}")
                 player.now_playing = None
@@ -532,15 +635,16 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
         pass
 
 
-@bot.tree.command(name="join", description="Join your current voice channel.")
-async def join(interaction: discord.Interaction) -> None:
+@bot.tree.command(name="join", description="Join your voice channel, or specify one.")
+@app_commands.describe(channel="Optional voice channel to join directly")
+async def join(interaction: discord.Interaction, channel: Optional[discord.VoiceChannel] = None) -> None:
     try:
         await interaction.response.defer(thinking=True, ephemeral=True)
-        vc = await ensure_voice(interaction)
+        vc = await ensure_voice(interaction, channel)
         if not vc.is_connected():
             raise RuntimeError("I could not connect to voice.")
         schedule_idle_disconnect(interaction.guild)
-        await interaction.followup.send("Joined your voice channel.", ephemeral=True)
+        await interaction.followup.send(f"Joined **{vc.channel}**.", ephemeral=True)
     except Exception as exc:
         if interaction.response.is_done():
             try:

@@ -38,6 +38,8 @@ SPOTIFY_CLIENT_ID=your_spotify_client_id
 SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
 YTDLP_COOKIEFILE=/app/cookies.txt
 YTDLP_COOKIE_B64=base64_of_cookies_txt
+YTDLP_COOKIE_B64_PART1=optional_split_part_1
+YTDLP_COOKIE_B64_PART2=optional_split_part_2
 ```
 
 If `DISCORD_GUILD_IDS` is set, it takes priority over `DISCORD_GUILD_ID`.
@@ -75,6 +77,30 @@ python .\bot.py
 ```
 
 If startup succeeds, you'll see login output in the console.
+
+## Local Fallback Bot: `mymusicsucks`
+
+Use this when Railway credit is out and you want to run from your PC:
+
+1. Create a second Discord application and bot named `mymusicsucks` in the Discord Developer Portal.
+2. Copy `.env.mymusicsucks.example` to `.env.mymusicsucks`.
+3. Put the `mymusicsucks` bot token in `DISCORD_TOKEN`.
+4. Start locally with:
+
+```powershell
+.\start_mymusicsucks.bat
+```
+
+5. Optional controls:
+
+```powershell
+.\status_mymusicsucks.bat
+.\stop_mymusicsucks.bat
+```
+
+Notes:
+- `start_mymusicsucks.bat` runs `bot.py` with `BOT_ENV_FILE=.env.mymusicsucks`.
+- Logs are written to `bot_mymusicsucks.out` and `bot_mymusicsucks.err`.
 
 ## 6) Invite Bot to Your Server
 
@@ -114,6 +140,7 @@ The script includes permissions for:
 - Spotify links are resolved to YouTube searches for playback.
 - Some YouTube videos are blocked by anti-bot checks. If needed, provide a cookies file and set `YTDLP_COOKIEFILE`.
 - If you can’t mount a file on your host (Railway), set `YTDLP_COOKIE_B64` with a base64-encoded `cookies.txt` file. This takes precedence.
+- If Railway rejects a single value as too large, split it across `YTDLP_COOKIE_B64_PART1`, `YTDLP_COOKIE_B64_PART2`, etc. The bot concatenates the parts automatically.
 
 
 ## Bot Control App
